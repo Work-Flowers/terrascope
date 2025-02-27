@@ -1,66 +1,85 @@
+WITH active_projects AS (
+	SELECT DISTINCT
+		p.id AS project_id,
+		p.name AS project_name,
+		p.state AS project_status,
+		p.started_at,
+		p.target_date,
+		p.completed_at,
+		DATE_TRUNC('month', i.completed_at)::DATE AS issue_completion_date,
+		ip.initiative_name
+	FROM linear.project AS p
+	INNER JOIN google_sheets.initiatives_to_projects AS ip
+		ON p.id = ip.project_id
+		AND ip.initiative_id = '063b054f-7b7d-49b0-9f93-96701ee6ee9d' -- ID for 2025 Features Roadmap
+	INNER JOIN linear.issue AS i
+		ON p.id = i.project_id
+		AND i._fivetran_deleted IS FALSE
+	INNER JOIN linear.workflow_state AS ws	
+		ON i.state_id = ws.id
+		AND ws.name = 'Done'
+		AND ws._fivetran_deleted IS FALSE
+ 	WHERE p._fivetran_deleted IS FALSE
+),
+
+employee_history AS (
+	SELECT
+		employee_id,
+		status,
+		effective_date AS from_date,
+		COALESCE(LEAD(effective_date, 1) OVER(PARTITION BY employee_id ORDER BY effective_date), '9999-01-01') AS to_date
+	FROM hibob.employee_life_cycle_history
+)
 -- first part of the query that identifies only shared resource members -- 
 
-	SELECT DISTINCT 
-		-- member's details -- 
-		e.id,
-        e.full_name,
-		e.email,
-		e.department,
-        et.team_name AS team,
-		e.title,
-		cm.development_share, 
-		cm.shared_resource,
-		INITCAP(hist.status) AS status,
-		hist.effective_date,
-		
-		-- project details -- 
-		active_projects.project_id,
-		active_projects.project_name,
-		INITCAP(active_projects.project_status) AS project_status,
-		DATE_TRUNC('month', active_projects.started_at)::DATE AS project_start_date,
-		active_projects.target_date::DATE AS project_target_date,
-		active_projects.completed_at::DATE AS project_completed_date,
-		active_projects.issue_completion_date AS issue_completed_at,
-		active_projects.initiative_name
-		
-	FROM google_sheets.capex_mapping AS cm
-	INNER JOIN hibob.employee AS e
-		ON TRIM(LOWER(cm.role)) = TRIM(LOWER(e.title))
-		AND cm.department = e.department
-		AND cm.shared_resource IS TRUE
-	INNER JOIN hibob.employee_life_cycle_history AS hist
-		ON e.id = hist.employee_id
-    INNER JOIN hibob.vw_employee_team AS et
-        ON e.id = et.employee_id
+SELECT DISTINCT 
+-- member's details -- 
+	e.id,
+	e.full_name,
+	e.email,
+	e.department,
+	et.team_name AS team,
+	e.title,
+	cm.development_share, 
+	cm.shared_resource,
+	INITCAP(hist.status) AS status,
+	hist.from_date,
 	
-	CROSS JOIN ( SELECT DISTINCT
-		 			p.id AS project_id,
-		 			p.name AS project_name,
-		 			p.state AS project_status,
-					p.started_at,
-					p.target_date,
-					p.completed_at,
-		 			DATE_TRUNC('month', i.completed_at)::DATE AS issue_completion_date,
-		 			ip.initiative_name
-				 FROM linear.project AS p
-				 INNER JOIN google_sheets.initiatives_to_projects AS ip
-				 	ON p.id = ip.project_id
-				 	AND ip.initiative_id = '063b054f-7b7d-49b0-9f93-96701ee6ee9d' -- ID for 2025 Features Roadmap
-				 INNER JOIN linear.issue AS i
-					ON p.id = i.project_id
-					AND i._fivetran_deleted IS FALSE
-				 INNER JOIN linear.workflow_state AS ws	
-				 	ON i.state_id = ws.id
-				 	AND ws.name = 'Done'
-				 	AND ws._fivetran_deleted IS FALSE
-				 WHERE p._fivetran_deleted IS FALSE
- 
-	) AS active_projects  
+	-- project details -- 
+	active_projects.project_id,
+	active_projects.project_name,
+	INITCAP(active_projects.project_status) AS project_status,
+	DATE_TRUNC('month', active_projects.started_at)::DATE AS project_start_date,
+	active_projects.target_date::DATE AS project_target_date,
+	active_projects.completed_at::DATE AS project_completed_date,
+	active_projects.issue_completion_date AS issue_completed_at,
+	active_projects.initiative_name
+
+FROM google_sheets.capex_mapping AS cm
+INNER JOIN hibob.employee AS e
+	ON TRIM(LOWER(cm.role)) = TRIM(LOWER(e.title))
+	AND cm.department = e.department
+	AND cm.shared_resource IS TRUE
+INNER JOIN hibob.vw_employee_team AS et
+	ON e.id = et.employee_id
 	
-	-- filter to inlcude only active employees or terminated/garden leave employees who contributed during the reporting month --
-	WHERE (hist.status = 'employed') 
-		OR (hist.status = 'terminated' AND DATE_TRUNC('month', hist.effective_date) >= DATE_TRUNC('month', active_projects.issue_completion_date))
-		OR (hist.status = 'garden leave' AND DATE_TRUNC('month', hist.effective_date) >= DATE_TRUNC('month', active_projects.issue_completion_date))
+CROSS JOIN active_projects  
+INNER JOIN employee_history AS hist
+	ON e.id = hist.employee_id
+	AND hist.status = 'employed'
+	AND active_projects.issue_completion_date BETWEEN hist.from_date AND hist.to_date
+	
+-- filter to inlcude only active employees or terminated/garden leave employees who contributed during the reporting month --
+-- WHERE 
+-- 	(hist.status = 'employed' AND hist.is_current IS TRUE)
+-- 	OR (
+-- 		hist.status = 'terminated' 
+-- 		AND DATE_TRUNC('month', hist.effective_date) >= DATE_TRUNC('month', active_projects.issue_completion_date)
+-- 	)
+-- 	OR (
+-- 		hist.status = 'garden leave' 
+-- 		AND DATE_TRUNC('month', hist.effective_date) >= DATE_TRUNC('month', active_projects.issue_completion_date)
+-- 	)
 	
 -- UNION to all linear project individuals that filters out duplicates from shared resource members --  
 UNION
