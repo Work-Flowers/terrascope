@@ -1,11 +1,13 @@
 WITH roles AS(
 	SELECT 
-		e.department,
-		e.title,
-		MIN(TO_DATE(e.start_date, 'DD/MM/YYYY')) AS role_created_date
-	FROM hibob.employee AS e
-	WHERE 
-		e.lifecycle_status = 'Employed'
+		cd.name AS department,
+		ct.name AS title,
+		MIN(e.effective_date) AS role_created_date
+	FROM hibob.employee_work_history AS e
+	INNER JOIN hibob.company AS ct
+		ON e.title = ct.id
+	INNER JOIN hibob.company AS cd
+		ON e.department = cd.id
 	GROUP BY 1,2
 )
 
