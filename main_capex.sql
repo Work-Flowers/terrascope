@@ -155,7 +155,7 @@ UNION
 		
 		-- dummy completed date -- 
 		DATE_TRUNC('month', d.date)::DATE AS completed_at,
-		ip.initiative_name
+		COALESCE(ip.initiative_name, '2025 Features Roadmap') AS initiative_name
 	
 	FROM google_sheets.capex_mapping AS map
 	INNER JOIN hibob.employee AS e
@@ -168,17 +168,16 @@ UNION
         ON e.id = et.employee_id
 	INNER JOIN linear.users AS u
 		ON LOWER(e.email) = LOWER(u.email)
-	LEFT JOIN linear.project_member AS mem
+	INNER JOIN linear.project_member AS mem
 		ON u.id = mem.member_id
 		AND mem._fivetran_deleted IS FALSE
-	LEFT JOIN linear.project AS p
+	INNER JOIN linear.project AS p
 		ON mem.project_id = p.id
 		AND p._fivetran_deleted IS FALSE
-	LEFT JOIN google_sheets.initiatives_to_projects AS ip
+	INNER JOIN google_sheets.initiatives_to_projects AS ip
 		ON p.id = ip.project_id
 		AND ip.initiative_id = '063b054f-7b7d-49b0-9f93-96701ee6ee9d' -- ID for 2025 Features Roadmap
 	INNER JOIN plumbing.dates AS d
-		
 		-- dummy dates that are between the start of the year and current date --
 		ON d.date BETWEEN DATE_TRUNC('year', CURRENT_DATE) AND CURRENT_DATE
 	INNER JOIN employee_history AS hist
