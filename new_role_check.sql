@@ -18,4 +18,4 @@ LEFT JOIN google_sheets.capex_mapping AS cm
 	ON e.title = cm.role
 WHERE 
 	cm.department IS NULL
-	AND e.role_created_date >= CURRENT_DATE + INTERVAL '-1 month'
+	AND e.role_created_date >= CURRENT_DATE + INTERVAL '-3 month'
